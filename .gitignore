@@ -1,0 +1,10 @@
+# Dependency directories
+node_modules/
+
+# Expo
+app_expo/
+.expo/
+
+# Expo
+server/
+.expo/
