@@ -1,0 +1,14 @@
+{
+  "name": "soundpad-mobile-server-rest",
+  "version": "1.0.0",
+  "description": "Servidor REST para Soundpad Mobile",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "soundpad.js": "^2.0.0"
+  }
+}
