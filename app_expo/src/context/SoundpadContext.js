@@ -1,6 +1,11 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import SoundpadService from '../services/SoundpadService';
-import { Alert } from 'react-native';
+import React, { createContext, useState, useContext, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import SoundpadService from "../services/SoundpadService"; // Ajuste o nome se necessário
+
+// Chaves para AsyncStorage
+const SERVER_CONFIG_KEY = "@SoundpadMobile:serverConfig";
+const THEME_KEY = "@SoundpadMobile:theme";
+const BUTTON_SIZE_KEY = "@SoundpadMobile:buttonSize";
 
 // Criando o contexto
 const SoundpadContext = createContext();
@@ -12,148 +17,171 @@ export const SoundpadProvider = ({ children }) => {
   const [currentList, setCurrentList] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSound, setCurrentSound] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [serverConfig, setServerConfig] = useState({
-    ipAddress: '',
-    port: '8000'
+    ipAddress: "",
+    port: "8000"
   });
+  const [theme, setTheme] = useState("dark"); // 'dark' ou 'light'
+  const [buttonSize, setButtonSize] = useState("medium"); // 'small', 'medium', 'large'
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+
+  // Carregar configurações salvas ao iniciar
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const savedConfig = await AsyncStorage.getItem(SERVER_CONFIG_KEY);
+        const savedTheme = await AsyncStorage.getItem(THEME_KEY);
+        const savedButtonSize = await AsyncStorage.getItem(BUTTON_SIZE_KEY);
+
+        if (savedConfig) {
+          setServerConfig(JSON.parse(savedConfig));
+        }
+        if (savedTheme) {
+          setTheme(savedTheme);
+        }
+        if (savedButtonSize) {
+          setButtonSize(savedButtonSize);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar configurações:", error);
+      } finally {
+        setIsLoadingConfig(false);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Salvar configuração do servidor
+  const saveServerConfig = async (newConfig) => {
+    try {
+      await AsyncStorage.setItem(SERVER_CONFIG_KEY, JSON.stringify(newConfig));
+      setServerConfig(newConfig);
+      console.log("Configuração do servidor salva:", newConfig);
+    } catch (error) {
+      console.error("Erro ao salvar configuração do servidor:", error);
+    }
+  };
+
+  // Salvar tema
+  const saveTheme = async (newTheme) => {
+    try {
+      await AsyncStorage.setItem(THEME_KEY, newTheme);
+      setTheme(newTheme);
+      console.log("Tema salvo:", newTheme);
+    } catch (error) {
+      console.error("Erro ao salvar tema:", error);
+    }
+  };
+
+  // Salvar tamanho dos botões
+  const saveButtonSize = async (newSize) => {
+    try {
+      await AsyncStorage.setItem(BUTTON_SIZE_KEY, newSize);
+      setButtonSize(newSize);
+      console.log("Tamanho dos botões salvo:", newSize);
+    } catch (error) {
+      console.error("Erro ao salvar tamanho dos botões:", error);
+    }
+  };
 
   // Conectar ao servidor Soundpad
   const connect = async (ipAddress, port) => {
-    setIsLoading(true);
+    const ipToUse = ipAddress || serverConfig.ipAddress;
+    const portToUse = port || serverConfig.port;
+
+    if (!ipToUse) {
+      throw new Error("Endereço IP não fornecido ou configurado.");
+    }
+
     try {
-      console.log(`Tentando conectar ao servidor: ${ipAddress}:${port}`);
-      const connected = await SoundpadService.connect(ipAddress, port);
-      setIsConnected(connected);
-      setServerConfig({ ipAddress, port });
-      console.log('Conexão bem-sucedida:', connected);
-      return connected;
+      await SoundpadService.connect(ipToUse, portToUse);
+      setIsConnected(true);
+      // Salvar configuração bem-sucedida
+      await saveServerConfig({ ipAddress: ipToUse, port: portToUse });
+      return true;
     } catch (error) {
-      console.error('Erro ao conectar:', error.message);
-      Alert.alert('Erro de Conexão', `Não foi possível conectar ao servidor: ${error.message}`);
+      console.error("Erro ao conectar:", error.message);
       setIsConnected(false);
-      return false;
-    } finally {
-      setIsLoading(false);
+      throw error; // Re-lançar o erro para a tela tratar
     }
   };
 
   // Desconectar do servidor
-  const disconnect = async () => {
-    setIsLoading(true);
-    try {
-      await SoundpadService.disconnect();
-      setIsConnected(false);
-      setCurrentList(null);
-      setCurrentSound(null);
-      setIsPlaying(false);
-    } catch (error) {
-      console.error('Erro ao desconectar:', error.message);
-    } finally {
-      setIsLoading(false);
-    }
+  const disconnect = () => {
+    SoundpadService.disconnect();
+    setIsConnected(false);
+    setCurrentList(null);
+    setCurrentSound(null);
+    setIsPlaying(false);
+    console.log("Desconectado.");
   };
 
   // Obter listas de sons
   const getSoundLists = async () => {
-    setIsLoading(true);
+    if (!isConnected) throw new Error("Não conectado ao Soundpad");
     try {
-      console.log('Obtendo listas de sons...');
       const categories = await SoundpadService.getCategories(true, false);
-      console.log(`Recebidas ${categories ? categories.length : 0} categorias`);
-      setSoundLists(categories || []);
-      return categories || [];
+      setSoundLists(categories);
+      return categories;
     } catch (error) {
-      console.error('Erro ao obter listas de sons:', error.message);
-      Alert.alert('Erro', `Falha ao obter listas de sons: ${error.message}`);
-      return [];
-    } finally {
-      setIsLoading(false);
+      console.error("Erro ao obter listas de sons:", error.message);
+      throw error;
     }
   };
 
   // Obter sons de uma lista específica
   const getSoundsFromList = async (listId) => {
-    setIsLoading(true);
+    if (!isConnected) throw new Error("Não conectado ao Soundpad");
     try {
-      console.log(`Obtendo sons da lista ${listId}...`);
       const list = await SoundpadService.getCategoryJSON(listId, true, false);
       setCurrentList(list);
       return list;
     } catch (error) {
-      console.error('Erro ao obter sons da lista:', error.message);
-      Alert.alert('Erro', `Falha ao obter sons da lista: ${error.message}`);
-      return null;
-    } finally {
-      setIsLoading(false);
+      console.error("Erro ao obter sons da lista:", error.message);
+      throw error;
     }
   };
 
   // Reproduzir um som
   const playSound = async (index) => {
+    if (!isConnected) throw new Error("Não conectado ao Soundpad");
     try {
-      console.log(`Reproduzindo som ${index}...`);
       const result = await SoundpadService.playSound(index);
       setIsPlaying(true);
       setCurrentSound(index);
       return result;
     } catch (error) {
-      console.error('Erro ao reproduzir som:', error.message);
-      Alert.alert('Erro', `Falha ao reproduzir som: ${error.message}`);
-      return false;
+      console.error("Erro ao reproduzir som:", error.message);
+      throw error;
     }
   };
 
   // Parar a reprodução
   const stopSound = async () => {
+    if (!isConnected) throw new Error("Não conectado ao Soundpad");
     try {
-      console.log('Parando reprodução...');
       const result = await SoundpadService.stopSound();
       setIsPlaying(false);
       setCurrentSound(null);
       return result;
     } catch (error) {
-      console.error('Erro ao parar som:', error.message);
-      return false;
+      console.error("Erro ao parar som:", error.message);
+      throw error;
     }
   };
 
   // Obter status de reprodução
   const getPlayStatus = async () => {
+    if (!isConnected) throw new Error("Não conectado ao Soundpad");
     try {
       const status = await SoundpadService.getPlayStatus();
-      setIsPlaying(status === 'PLAYING');
+      setIsPlaying(status === "PLAYING");
       return status;
     } catch (error) {
-      console.error('Erro ao obter status de reprodução:', error.message);
+      console.error("Erro ao obter status de reprodução:", error.message);
       return null;
     }
   };
-
-  // Verificar status de conexão periodicamente
-  useEffect(() => {
-    let statusInterval;
-    
-    if (isConnected && serverConfig.ipAddress) {
-      statusInterval = setInterval(async () => {
-        try {
-          const status = await SoundpadService.isConnectedToSoundpad();
-          if (isConnected !== status) {
-            setIsConnected(status);
-          }
-        } catch (error) {
-          console.log('Erro ao verificar status de conexão:', error.message);
-          setIsConnected(false);
-        }
-      }, 10000); // Verificar a cada 10 segundos
-    }
-    
-    return () => {
-      if (statusInterval) {
-        clearInterval(statusInterval);
-      }
-    };
-  }, [isConnected, serverConfig]);
 
   return (
     <SoundpadContext.Provider
@@ -163,15 +191,20 @@ export const SoundpadProvider = ({ children }) => {
         currentList,
         isPlaying,
         currentSound,
-        isLoading,
         serverConfig,
+        theme,
+        buttonSize,
+        isLoadingConfig,
         connect,
         disconnect,
         getSoundLists,
         getSoundsFromList,
         playSound,
         stopSound,
-        getPlayStatus
+        getPlayStatus,
+        saveServerConfig,
+        saveTheme,
+        saveButtonSize
       }}
     >
       {children}
@@ -183,7 +216,8 @@ export const SoundpadProvider = ({ children }) => {
 export const useSoundpad = () => {
   const context = useContext(SoundpadContext);
   if (!context) {
-    throw new Error('useSoundpad deve ser usado dentro de um SoundpadProvider');
+    throw new Error("useSoundpad deve ser usado dentro de um SoundpadProvider");
   }
   return context;
 };
+
